@@ -13,8 +13,11 @@ USAGE
 
 function main {
   options "$@"
-  install_mesos
-  configure_slave
+  global os_release
+  case "$os_release" in
+    ubuntu/14.04)      install ;;
+    *)                 err "No support for $os_release at this time." ;;
+  esac
 }
 
 function globals {
@@ -40,12 +43,16 @@ function options {
   done
 }
 
-function install_mesos {
-  global os_release
-  case "$os_release" in
-    ubuntu/14.04)      install_with_apt "trusty" ;;
-    *)                 err "No support for $os_release at this time." ;;
-  esac
+function install {
+  install_with_apt "trusty"
+  install_chronos
+  configure_slave
+  clean_up
+}
+
+function install_chronos {
+  apt_ chronos
+  as_root sh -c 'echo 8081 > /etc/chronos/conf/http_port'
 }
 
 function configure_slave {
@@ -54,26 +61,32 @@ function configure_slave {
     mkdir -p /etc/mesos-slave
     echo "$slave_hostname" > /etc/mesos-slave/hostname
   fi
+  as_root sh -c 'echo "docker,mesos" > /etc/mesos-slave/containerizers'
+}
+
+function clean_up {
+  as_root apt-get autoremove -y
 }
 
 function install_apt_source {
   echo "deb http://repos.mesosphere.io/ubuntu/ $1 main" |
     as_root tee /etc/apt/sources.list.d/mesosphere.list
   as_root apt-key adv --keyserver keyserver.ubuntu.com --recv E56151BF
-  as_root apt-get update
 }
 
 function install_with_apt {
   apt_ curl unzip
   install_apt_source $1
-  apt_ zookeeperd zookeeper zookeeper-bin docker.io mesos marathon deimos
+  as_root apt-get -o Acquire::Check-Valid-Until=false update
+  as_root apt-get upgrade -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold --no-install-recommends --no-install-suggests -y
+  apt_ zookeeperd zookeeper zookeeper-bin docker.io mesos marathon
   as_root ln -sf /usr/bin/docker.io /usr/local/bin/docker
   as_root sed -i '$acomplete -F _docker docker' /etc/bash_completion.d/docker.io
 }
 
 function apt_ {
-  as_root env DEBIAN_FRONTEND=noninteractive aptitude update
-  as_root env DEBIAN_FRONTEND=noninteractive aptitude install -y "$@"
+  as_root apt-get install -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold --no-install-recommends --no-install-suggests -y "$@"
+  as_root apt-get clean -y "$@"
 }
 
 function as_root {
