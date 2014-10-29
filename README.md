@@ -1,4 +1,7 @@
-# Playa Mesos
+# Overview
+
+This is a fork of [Playa Mesos](https://github.com/mesosphere/playa-mesos) with Chronos added and
+deprecated modules like Deimos removed.
 
 [Playa Mesos][8] helps you quickly create [Apache Mesos][1] test environments.
 This project relies on [VirtualBox][5], [Vagrant][6], and an Ubuntu box image
