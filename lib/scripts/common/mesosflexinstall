@@ -44,15 +44,42 @@ function options {
 }
 
 function install {
-  install_with_apt "trusty"
+  setup_apt "trusty"
+  upgrade
+  install_dependencies
+  install_mesos
   install_chronos
   configure_slave
   clean_up
 }
 
+function setup_apt {
+  echo "deb http://repos.mesosphere.io/ubuntu/ $1 main" |
+    sudo tee /etc/apt/sources.list.d/mesosphere.list
+  sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E56151BF
+}
+
+function upgrade {
+  sudo apt-get -o Acquire::Check-Valid-Until=false update
+  apt_ upgrade
+}
+
+function install_dependencies {
+  apt_ install curl unzip
+}
+
+function install_mesos {
+  apt_ install zookeeperd zookeeper zookeeper-bin docker.io mesos marathon
+  sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker
+  sudo sed -i '$acomplete -F _docker docker' /etc/bash_completion.d/docker.io
+  sudo restart mesos-master || sudo start mesos-master
+  sudo restart mesos-slave || sudo start mesos-slave
+}
+
 function install_chronos {
-  apt_ chronos
-  as_root sh -c 'echo 8081 > /etc/chronos/conf/http_port'
+  apt_ install chronos
+  sudo sh -c 'echo 8081 > /etc/chronos/conf/http_port'
+  sudo restart chronos || sudo start chronos
 }
 
 function configure_slave {
@@ -61,38 +88,18 @@ function configure_slave {
     mkdir -p /etc/mesos-slave
     echo "$slave_hostname" > /etc/mesos-slave/hostname
   fi
-  as_root sh -c 'echo "docker,mesos" > /etc/mesos-slave/containerizers'
+  sudo sh -c 'echo "docker,mesos" > /etc/mesos-slave/containerizers'
 }
 
 function clean_up {
-  as_root apt-get autoremove -y
-}
-
-function install_apt_source {
-  echo "deb http://repos.mesosphere.io/ubuntu/ $1 main" |
-    as_root tee /etc/apt/sources.list.d/mesosphere.list
-  as_root apt-key adv --keyserver keyserver.ubuntu.com --recv E56151BF
-}
-
-function install_with_apt {
-  apt_ curl unzip
-  install_apt_source $1
-  as_root apt-get -o Acquire::Check-Valid-Until=false update
-  as_root apt-get upgrade -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold --no-install-recommends --no-install-suggests -y
-  apt_ zookeeperd zookeeper zookeeper-bin docker.io mesos marathon
-  as_root ln -sf /usr/bin/docker.io /usr/local/bin/docker
-  as_root sed -i '$acomplete -F _docker docker' /etc/bash_completion.d/docker.io
+  sudo apt-get autoremove -y
 }
 
 function apt_ {
-  as_root apt-get install -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold --no-install-recommends --no-install-suggests -y "$@"
-  as_root apt-get clean -y "$@"
-}
-
-function as_root {
-  if [[ $(id -u) = 0 ]]
-  then "$@"
-  else sudo "$@"
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold --no-install-recommends --no-install-suggests "$@"
+  if [[ "$1" = "install" ]]
+  then
+    sudo apt-get clean -y `echo "$@" | cut -d " " -f2-`
   fi
 }
 
